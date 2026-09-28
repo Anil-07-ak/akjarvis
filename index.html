@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. - Autonomous AI Assistant & Voice Biometric System</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-stark">
+
+    <!-- Hexagon Matrix & Particle Starfield Canvas -->
+    <canvas id="bgCanvas"></canvas>
+
+    <!-- Top Futuristic HUD Header -->
+    <header class="hud-header">
+        <div class="hud-brand">
+            <div class="stark-logo">
+                <div class="logo-reactor-icon"></div>
+                <span class="brand-title">J.A.R.V.I.S.</span>
+            </div>
+            <div class="subtitle">AUTONOMOUS NEURAL MATRIX v4.2</div>
+        </div>
+
+        <div class="hud-status-bar">
+            <div class="status-item">
+                <span class="label">SYSTEM STATUS:</span>
+                <span id="sysStatusText" class="value text-success"><i class="fa-solid fa-circle-dot blink"></i> ONLINE</span>
+            </div>
+            <div class="status-item">
+                <span class="label">SECURITY MODE:</span>
+                <span id="secLevelText" class="value text-cyan"><i class="fa-solid fa-shield-halved"></i> BIOMETRIC LOCKED</span>
+            </div>
+            <div class="status-item">
+                <span class="label">OPERATOR:</span>
+                <span id="authUserText" class="value text-gold"><i class="fa-solid fa-fingerprint"></i> UNENROLLED</span>
+            </div>
+            <div class="status-item">
+                <span class="label">TIME:</span>
+                <span id="hudClock" class="value font-mono">00:00:00</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="hud-main">
+        
+        <!-- Left Panel: Gauges & Voice Biometrics -->
+        <section class="hud-panel left-panel">
+            <div class="panel-header">
+                <h3><i class="fa-solid fa-microchip"></i> SYSTEM DIAGNOSTICS</h3>
+                <span class="panel-tag">SYS.DIAG.v4.2</span>
+            </div>
+            <div class="panel-content">
+                <!-- Gauges Grid -->
+                <div class="gauge-grid">
+                    <div class="gauge-box">
+                        <div class="gauge-title">NEURAL CORE</div>
+                        <div class="radial-progress" id="coreGauge">
+                            <svg class="progress-ring" width="80" height="80">
+                                <circle class="progress-ring__circle-bg" stroke="rgba(0,240,255,0.1)" stroke-width="6" fill="transparent" r="32" cx="40" cy="40"/>
+                                <circle id="coreGaugeCircle" class="progress-ring__circle" stroke="#00f0ff" stroke-width="6" fill="transparent" r="32" cx="40" cy="40"/>
+                            </svg>
+                            <span id="coreVal" class="gauge-value font-mono">42%</span>
+                        </div>
+                    </div>
+
+                    <div class="gauge-box">
+                        <div class="gauge-title">QUANTUM MATRIX</div>
+                        <div class="radial-progress" id="matrixGauge">
+                            <svg class="progress-ring" width="80" height="80">
+                                <circle class="progress-ring__circle-bg" stroke="rgba(0,240,255,0.1)" stroke-width="6" fill="transparent" r="32" cx="40" cy="40"/>
+                                <circle id="matrixGaugeCircle" class="progress-ring__circle" stroke="#ffaa00" stroke-width="6" fill="transparent" r="32" cx="40" cy="40"/>
+                            </svg>
+                            <span id="matrixVal" class="gauge-value font-mono">88%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Telemetry List -->
+                <div class="telemetry-list">
+                    <div class="telemetry-row">
+                        <span>CPU TEMP:</span>
+                        <div class="bar-container"><div id="tempBar" class="bar-fill" style="width: 38%;"></div></div>
+                        <span id="tempVal" class="font-mono">38°C</span>
+                    </div>
+                    <div class="telemetry-row">
+                        <span>MEMORY:</span>
+                        <div class="bar-container"><div id="memBar" class="bar-fill bar-gold" style="width: 64%;"></div></div>
+                        <span id="memVal" class="font-mono">6.4/16 GB</span>
+                    </div>
+                    <div class="telemetry-row">
+                        <span>VOICE SYNAPSE:</span>
+                        <div class="bar-container"><div id="synapseBar" class="bar-fill bar-green" style="width: 95%;"></div></div>
+                        <span id="synapseVal" class="font-mono">READY</span>
+                    </div>
+                </div>
+
+                <!-- Speaker Biometric Lock Card -->
+                <div class="panel-section bio-section">
+                    <div class="section-header">
+                        <h4><i class="fa-solid fa-id-card-clip"></i> VOICE BIOMETRIC LOCK</h4>
+                    </div>
+                    
+                    <div class="bio-status-card" id="bioStatusCard">
+                        <div class="bio-icon">
+                            <i class="fa-solid fa-user-lock" id="bioLockIcon"></i>
+                        </div>
+                        <div class="bio-info">
+                            <div id="bioPrimaryStatus" class="bio-title">SPEAKER UNVERIFIED</div>
+                            <div id="bioMatchPercent" class="bio-sub">Enroll your voice so JARVIS follows only your instructions.</div>
+                        </div>
+                    </div>
+
+                    <div class="bio-actions">
+                        <button id="btnEnrollVoice" class="btn btn-hud btn-primary">
+                            <i class="fa-solid fa-microphone-lines"></i> ENROLL VOICE
+                        </button>
+                        <button id="btnToggleSecurity" class="btn btn-hud btn-secondary">
+                            <i class="fa-solid fa-shield-virus"></i> STRICT MODE
+                        </button>
+                    </div>
+
+                    <div class="strict-mode-indicator">
+                        <span class="label">SPEAKER VERIFICATION:</span>
+                        <span id="strictModeStatus" class="badge badge-active">ENABLED</span>
+                    </div>
+                </div>
+
+                <!-- Color Protocol Selector -->
+                <div class="panel-section">
+                    <div class="section-header">
+                        <h4><i class="fa-solid fa-palette"></i> HUD PROTOCOL THEME</h4>
+                    </div>
+                    <div class="theme-buttons">
+                        <button class="theme-btn active" data-theme="stark" title="Stark Cyan"><span class="dot stark"></span> STARK CYAN</button>
+                        <button class="theme-btn" data-theme="mark42" title="Mark 42 Gold"><span class="dot mark42"></span> MARK 42</button>
+                        <button class="theme-btn" data-theme="stealth" title="Stealth Emerald"><span class="dot stealth"></span> STEALTH</button>
+                        <button class="theme-btn" data-theme="crimson" title="Crimson Alert"><span class="dot crimson"></span> ALERT RED</button>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Center Panel: Holographic Arc Reactor & Speech Visualizer -->
+        <section class="hud-panel center-panel">
+            
+            <!-- Arc Reactor Animation Canvas -->
+            <div class="arc-container">
+                <canvas id="arcCanvas" width="420" height="420"></canvas>
+                
+                <div class="arc-overlay-info">
+                    <div id="jarvisStateTag" class="state-tag">STANDBY</div>
+                </div>
+            </div>
+
+            <!-- Speech Audio Visualizer Canvas -->
+            <div class="visualizer-wrapper">
+                <canvas id="audioVisualizer" width="550" height="70"></canvas>
+                <div class="vis-labels">
+                    <span>20 Hz</span>
+                    <span class="vis-center-label"><i class="fa-solid fa-wave-square"></i> LIVE AUDIO SPECTRUM VERIFIER</span>
+                    <span>20 kHz</span>
+                </div>
+            </div>
+
+            <!-- JARVIS Response Subtitle Display -->
+            <div class="jarvis-response-box">
+                <div class="speaker-tag"><i class="fa-solid fa-headset"></i> J.A.R.V.I.S. RESPONSE:</div>
+                <div id="jarvisSubtitles" class="subtitles-text">
+                    "Greeting Master. Systems operational. Click 'ENROLL VOICE' to train my neural matrix on your voice pattern, or click the Arc Core to speak."
+                </div>
+            </div>
+
+            <!-- Mic Control Bar -->
+            <div class="mic-control-section">
+                <button id="btnMicListen" class="mic-btn glow-pulse">
+                    <div class="mic-btn-inner">
+                        <i class="fa-solid fa-microphone"></i>
+                    </div>
+                </button>
+                
+                <div class="mic-status-wrapper">
+                    <span id="micStatusText" class="mic-status">CLICK MIC OR SAY "HEY JARVIS"</span>
+                    <span id="transcriptionText" class="transcription-preview">Listening for commands...</span>
+                </div>
+
+                <div class="sound-toggle">
+                    <button id="btnToggleAudio" class="icon-btn" title="Toggle Sound FX">
+                        <i class="fa-solid fa-volume-high" id="audioIcon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Manual Console Input Fallback -->
+            <div class="manual-input-box">
+                <span class="prompt-symbol">JARVIS&gt;</span>
+                <input type="text" id="commandInput" placeholder="Type a command or instruction (e.g., 'check status', 'set timer 10s', 'open youtube')..." autocomplete="off">
+                <button id="btnSubmitCmd" class="btn-send"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+
+        </section>
+
+        <!-- Right Panel: Command Directives & Security Logs -->
+        <section class="hud-panel right-panel">
+            
+            <div class="panel-header">
+                <h3><i class="fa-solid fa-list-check"></i> DIRECTIVES & LOGS</h3>
+                <span class="panel-tag">LOG.SYS.89</span>
+            </div>
+
+            <div class="panel-content">
+                
+                <!-- Command Quick Chips -->
+                <div class="panel-section">
+                    <div class="section-header">
+                        <h4><i class="fa-solid fa-terminal"></i> VOICE COMMANDS</h4>
+                    </div>
+                    <div class="command-chips">
+                        <span class="cmd-chip" data-cmd="check status"><i class="fa-solid fa-gauge"></i> "Check status"</span>
+                        <span class="cmd-chip" data-cmd="what is the time"><i class="fa-solid fa-clock"></i> "What is the time?"</span>
+                        <span class="cmd-chip" data-cmd="set timer 30 seconds"><i class="fa-solid fa-stopwatch"></i> "Set timer 30s"</span>
+                        <span class="cmd-chip" data-cmd="open youtube"><i class="fa-solid fa-globe"></i> "Open YouTube"</span>
+                        <span class="cmd-chip" data-cmd="tell me a joke"><i class="fa-solid fa-masks-theater"></i> "Tell me a joke"</span>
+                        <span class="cmd-chip" data-cmd="protocol overdrive"><i class="fa-solid fa-bolt"></i> "Protocol Overdrive"</span>
+                        <span class="cmd-chip" data-cmd="lock system"><i class="fa-solid fa-lock"></i> "Lock System"</span>
+                    </div>
+                </div>
+
+                <!-- Active Tasks & Countdown Timers -->
+                <div class="panel-section">
+                    <div class="section-header">
+                        <h4><i class="fa-solid fa-hourglass-half"></i> ACTIVE TIMERS & TASKS</h4>
+                        <button id="btnClearTasks" class="btn-text"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                    <div id="taskList" class="task-list">
+                        <div class="task-item empty-state">No active countdowns or pending tasks.</div>
+                    </div>
+                </div>
+
+                <!-- Terminal Audit Log -->
+                <div class="panel-section flex-grow">
+                    <div class="section-header">
+                        <h4><i class="fa-solid fa-shield-cat"></i> BIOMETRIC SECURITY LOG</h4>
+                        <button id="btnClearLogs" class="btn-text"><i class="fa-solid fa-eraser"></i></button>
+                    </div>
+                    <div id="securityLog" class="terminal-log">
+                        <div class="log-entry log-sys">[00:00:00] SYSTEM INITIALIZED. Awaiting Voice Biometric Enrollment.</div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal: Voice Biometric Enrollment Wizard -->
+    <div id="enrollmentModal" class="modal-backdrop hidden">
+        <div class="modal-card">
+            <button class="modal-close" id="btnCloseEnrollModal">&times;</button>
+            <div class="modal-header">
+                <i class="fa-solid fa-fingerprint fa-3x text-cyan"></i>
+                <h2>VOICE BIOMETRIC ENROLLMENT</h2>
+                <p>Train JARVIS to recognize your unique vocal signature and reject unauthorized speakers.</p>
+            </div>
+
+            <div class="modal-body">
+                
+                <div class="enrollment-steps">
+                    <div class="step active" id="step1Indicator">
+                        <span class="step-num">1</span>
+                        <span class="step-label">Passphrase</span>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" id="step2Indicator">
+                        <span class="step-num">2</span>
+                        <span class="step-label">Audio Sample</span>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" id="step3Indicator">
+                        <span class="step-num">3</span>
+                        <span class="step-label">Verification</span>
+                    </div>
+                </div>
+
+                <!-- Step 1 -->
+                <div class="step-content" id="enrollStep1">
+                    <div class="form-group">
+                        <label for="userNameInput"><i class="fa-solid fa-user"></i> Master / Operator Name:</label>
+                        <input type="text" id="userNameInput" value="Tony Stark" placeholder="Enter your name...">
+                    </div>
+                    <div class="form-group">
+                        <label for="passphraseInput"><i class="fa-solid fa-key"></i> Security Voice Passphrase:</label>
+                        <input type="text" id="passphraseInput" value="Jarvis activate biometric security protocol" placeholder="Phrase to speak for verification...">
+                    </div>
+                    <div class="info-alert">
+                        <i class="fa-solid fa-circle-info"></i> You will read this phrase aloud so JARVIS captures your vocal pitch range, frequency spectrum, and speech rhythm signature.
+                    </div>
+                    <button id="btnGoToStep2" class="btn btn-hud btn-primary full-width">PROCEED TO RECORDING <i class="fa-solid fa-arrow-right"></i></button>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="step-content hidden" id="enrollStep2">
+                    <div class="prompt-phrase-box">
+                        <span class="prompt-title">PLEASE READ ALOUD CLEARLY:</span>
+                        <blockquote id="phraseToRead">"Jarvis activate biometric security protocol"</blockquote>
+                    </div>
+
+                    <div class="record-vis-container">
+                        <canvas id="recordCanvas" width="400" height="110"></canvas>
+                        <div id="recordingTime" class="rec-timer">00.0s</div>
+                    </div>
+
+                    <div class="rec-controls">
+                        <button id="btnStartRecord" class="btn btn-hud btn-danger">
+                            <i class="fa-solid fa-circle-dot"></i> START RECORDING SAMPLE
+                        </button>
+                        <button id="btnStopRecord" class="btn btn-hud btn-secondary" disabled>
+                            <i class="fa-solid fa-square"></i> COMPLETE RECORDING
+                        </button>
+                    </div>
+
+                    <div id="recordProgressText" class="status-subtext">Press Start and speak the phrase clearly.</div>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="step-content hidden" id="enrollStep3">
+                    <div class="success-animation text-center">
+                        <i class="fa-solid fa-shield-check fa-4x text-green glow-pulse"></i>
+                    </div>
+                    <h3 class="text-center" style="margin-top:10px;">VOICEPRINT PROFILE SYNTHESIZED</h3>
+                    
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <span class="m-label">Pitch Signature:</span>
+                            <span id="mPitch" class="m-val">128 Hz</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="m-label">Spectral Centroid:</span>
+                            <span id="mCentroid" class="m-val">1.42 kHz</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="m-label">Energy Vectors:</span>
+                            <span id="mVector" class="m-val">16 Bands</span>
+                        </div>
+                    </div>
+
+                    <div class="info-alert success">
+                        <i class="fa-solid fa-circle-check"></i> JARVIS is now locked to your voice. Any unknown speaker attempting commands will be rejected with an ACCESS DENIED alert.
+                    </div>
+
+                    <button id="btnSaveVoiceprint" class="btn btn-hud btn-success full-width">ACTIVATE VOICE LOCK & CLOSE</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Overlay Screen -->
+    <div id="alertOverlay" class="alert-overlay hidden">
+        <div class="alert-content">
+            <i class="fa-solid fa-triangle-exclamation fa-5x alert-icon"></i>
+            <h1 id="alertTitle">UNAUTHORIZED SPEAKER DETECTED</h1>
+            <p id="alertBody">BIOMETRIC MISMATCH: Voice spectrum score below security threshold (24.5%). Command aborted.</p>
+            <button id="btnDismissAlert" class="btn btn-hud btn-danger">DISMISS SECURITY ALERT</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
