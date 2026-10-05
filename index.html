@@ -10,6 +10,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     <!-- FontAwesome icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js 3D WebGL Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body class="theme-stark">
@@ -21,10 +23,10 @@
     <header class="hud-header">
         <div class="hud-brand">
             <div class="stark-logo">
-                <div class="logo-reactor-icon"></div>
+                <div class="logo-brain-icon"><i class="fa-solid fa-brain"></i></div>
                 <span class="brand-title">J.A.R.V.I.S.</span>
             </div>
-            <div class="subtitle">AUTONOMOUS NEURAL MATRIX v4.2</div>
+            <div class="subtitle">VOICE BIOMETRIC NEURAL MATRIX v5.0</div>
         </div>
 
         <div class="hud-status-bar">
@@ -32,13 +34,13 @@
                 <span class="label">SYSTEM STATUS:</span>
                 <span id="sysStatusText" class="value text-success"><i class="fa-solid fa-circle-dot blink"></i> ONLINE</span>
             </div>
-            <div class="status-item">
-                <span class="label">SECURITY MODE:</span>
-                <span id="secLevelText" class="value text-cyan"><i class="fa-solid fa-shield-halved"></i> BIOMETRIC LOCKED</span>
+            <div class="status-item" id="headerBioStatusItem">
+                <span class="label">VOICE BIOMETRIC:</span>
+                <span id="secLevelText" class="value text-cyan"><i class="fa-solid fa-microphone-lines"></i> ONLY MY VOICE</span>
             </div>
             <div class="status-item">
-                <span class="label">OPERATOR:</span>
-                <span id="authUserText" class="value text-gold"><i class="fa-solid fa-fingerprint"></i> UNENROLLED</span>
+                <span class="label">MASTER OPERATOR:</span>
+                <span id="authUserText" class="value text-gold"><i class="fa-solid fa-user-shield"></i> UNENROLLED</span>
             </div>
             <div class="status-item">
                 <span class="label">TIME:</span>
@@ -104,12 +106,13 @@
                 <!-- Speaker Biometric Lock Card -->
                 <div class="panel-section bio-section">
                     <div class="section-header">
-                        <h4><i class="fa-solid fa-id-card-clip"></i> VOICE BIOMETRIC LOCK</h4>
+                        <h4><i class="fa-solid fa-fingerprint"></i> MASTER VOICE BIOMETRIC</h4>
+                        <span class="badge badge-active" id="bioBadgeText">LOCK ACTIVE</span>
                     </div>
                     
                     <div class="bio-status-card" id="bioStatusCard">
                         <div class="bio-icon">
-                            <i class="fa-solid fa-user-lock" id="bioLockIcon"></i>
+                            <i class="fa-solid fa-user-shield" id="bioLockIcon"></i>
                         </div>
                         <div class="bio-info">
                             <div id="bioPrimaryStatus" class="bio-title">SPEAKER UNVERIFIED</div>
@@ -117,18 +120,55 @@
                         </div>
                     </div>
 
+                    <!-- Listen Only To My Voice Master Toggle -->
+                    <div class="bio-master-toggle-box">
+                        <label class="toggle-switch-label" for="chkOnlyMyVoice">
+                            <div class="toggle-text">
+                                <span class="toggle-title"><i class="fa-solid fa-user-lock text-cyan"></i> LISTEN ONLY TO MY VOICE</span>
+                                <span class="toggle-desc">Reject all commands from unknown voices</span>
+                            </div>
+                            <div class="switch">
+                                <input type="checkbox" id="chkOnlyMyVoice" checked>
+                                <span class="slider round"></span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <!-- Real-Time Voice Biometric Match Meter -->
+                    <div class="bio-meter-card">
+                        <div class="meter-header">
+                            <span class="meter-label"><i class="fa-solid fa-wave-square"></i> LIVE VOICE MATCH:</span>
+                            <span id="liveMatchScore" class="meter-val font-mono">-- %</span>
+                        </div>
+                        <div class="meter-bar-track">
+                            <div id="liveMatchBar" class="meter-bar-fill" style="width: 0%;"></div>
+                            <div class="meter-threshold-line" title="Security Threshold (60%)"></div>
+                        </div>
+                        <div class="meter-labels">
+                            <span>0% (REJECT)</span>
+                            <span class="threshold-label" id="thresholdLabel">THRESHOLD: 60%</span>
+                            <span>100% (MATCH)</span>
+                        </div>
+                    </div>
+
+                    <!-- Biometric Sensitivity Selection -->
+                    <div class="bio-sensitivity-selector">
+                        <span class="sub-label"><i class="fa-solid fa-sliders"></i> SENSITIVITY:</span>
+                        <div class="btn-group-sensitivity">
+                            <button class="sens-btn active" data-sens="strict" title="High Security (65% match needed)">STRICT</button>
+                            <button class="sens-btn" data-sens="balanced" title="Balanced (50% match needed)">BALANCED</button>
+                            <button class="sens-btn" data-sens="permissive" title="Permissive (38% match needed)">LENIENT</button>
+                        </div>
+                    </div>
+
+                    <!-- Voice Biometric Action Buttons -->
                     <div class="bio-actions">
                         <button id="btnEnrollVoice" class="btn btn-hud btn-primary">
                             <i class="fa-solid fa-microphone-lines"></i> ENROLL VOICE
                         </button>
-                        <button id="btnToggleSecurity" class="btn btn-hud btn-secondary">
-                            <i class="fa-solid fa-shield-virus"></i> STRICT MODE
+                        <button id="btnTestVoice" class="btn btn-hud btn-secondary">
+                            <i class="fa-solid fa-id-card-clip"></i> TEST VOICE
                         </button>
-                    </div>
-
-                    <div class="strict-mode-indicator">
-                        <span class="label">SPEAKER VERIFICATION:</span>
-                        <span id="strictModeStatus" class="badge badge-active">ENABLED</span>
                     </div>
                 </div>
 
@@ -148,24 +188,36 @@
             </div>
         </section>
 
-        <!-- Center Panel: Holographic Arc Reactor & Speech Visualizer -->
+        <!-- Center Panel: Holographic Neural Brain & Speech Visualizer -->
         <section class="hud-panel center-panel">
             
-            <!-- Arc Reactor Animation Canvas -->
-            <div class="arc-container">
-                <canvas id="arcCanvas" width="420" height="420"></canvas>
+            <!-- Holographic Neural Brain Canvas with Dynamic Vibrations -->
+            <div class="brain-container" id="brainContainer" title="Click Neural Brain to Toggle Listening">
+                <!-- Concentric Holographic Soundwave / Vibration Rings -->
+                <div class="vibration-wave-ring ring-1"></div>
+                <div class="vibration-wave-ring ring-2"></div>
+                <div class="vibration-wave-ring ring-3"></div>
+
+                <!-- Neural Brain Canvas -->
+                <canvas id="brainCanvas" width="460" height="400"></canvas>
                 
-                <div class="arc-overlay-info">
-                    <div id="jarvisStateTag" class="state-tag">STANDBY</div>
+                <!-- Brain HUD Overlay Info -->
+                <div class="brain-overlay-info">
+                    <div id="jarvisStateTag" class="state-tag"><i class="fa-solid fa-brain"></i> BRAIN CORE: STANDBY</div>
+                    <div class="brain-telemetry">
+                        <span class="brain-chip"><i class="fa-solid fa-wave-square"></i> <span id="brainWaveLabel">THETA / ALPHA</span>: <span id="brainFreqVal">10.8 Hz</span></span>
+                        <span class="brain-chip"><i class="fa-solid fa-burst"></i> VIBRATION: <span id="brainVibVal">IDLE RIPPLE</span></span>
+                        <span class="brain-chip text-cyan"><i class="fa-solid fa-shield-halved"></i> <span id="brainBioLockBadge">MASTER ONLY</span></span>
+                    </div>
                 </div>
             </div>
 
             <!-- Speech Audio Visualizer Canvas -->
             <div class="visualizer-wrapper">
-                <canvas id="audioVisualizer" width="550" height="70"></canvas>
+                <canvas id="audioVisualizer" width="550" height="65"></canvas>
                 <div class="vis-labels">
                     <span>20 Hz</span>
-                    <span class="vis-center-label"><i class="fa-solid fa-wave-square"></i> LIVE AUDIO SPECTRUM VERIFIER</span>
+                    <span class="vis-center-label"><i class="fa-solid fa-wave-square"></i> LIVE VOICE BIOMETRIC FREQUENCY SPECTRUM & VIBRATION MONITOR</span>
                     <span>20 kHz</span>
                 </div>
             </div>
@@ -174,21 +226,21 @@
             <div class="jarvis-response-box">
                 <div class="speaker-tag"><i class="fa-solid fa-headset"></i> J.A.R.V.I.S. RESPONSE:</div>
                 <div id="jarvisSubtitles" class="subtitles-text">
-                    "Greeting Master. Systems operational. Click 'ENROLL VOICE' to train my neural matrix on your voice pattern, or click the Arc Core to speak."
+                    "Greetings Master. Neural Brain Matrix online. Voice Biometric Lock is active to follow only your commands. Click the Brain or Mic to speak."
                 </div>
             </div>
 
             <!-- Mic Control Bar -->
             <div class="mic-control-section">
-                <button id="btnMicListen" class="mic-btn glow-pulse">
+                <button id="btnMicListen" class="mic-btn glow-pulse" title="Click to Talk">
                     <div class="mic-btn-inner">
                         <i class="fa-solid fa-microphone"></i>
                     </div>
                 </button>
                 
                 <div class="mic-status-wrapper">
-                    <span id="micStatusText" class="mic-status">CLICK MIC OR SAY "HEY JARVIS"</span>
-                    <span id="transcriptionText" class="transcription-preview">Listening for commands...</span>
+                    <span id="micStatusText" class="mic-status">CLICK BRAIN / MIC OR SAY "HEY JARVIS"</span>
+                    <span id="transcriptionText" class="transcription-preview">Listening for Master's commands...</span>
                 </div>
 
                 <div class="sound-toggle">
@@ -201,7 +253,7 @@
             <!-- Manual Console Input Fallback -->
             <div class="manual-input-box">
                 <span class="prompt-symbol">JARVIS&gt;</span>
-                <input type="text" id="commandInput" placeholder="Type a command or instruction (e.g., 'check status', 'set timer 10s', 'open youtube')..." autocomplete="off">
+                <input type="text" id="commandInput" placeholder="Enter instruction (e.g., 'check status', 'who are you', 'set timer 30s', 'open youtube')..." autocomplete="off">
                 <button id="btnSubmitCmd" class="btn-send"><i class="fa-solid fa-paper-plane"></i></button>
             </div>
 
@@ -318,14 +370,19 @@
 
                     <div class="rec-controls">
                         <button id="btnStartRecord" class="btn btn-hud btn-danger">
-                            <i class="fa-solid fa-circle-dot"></i> START RECORDING SAMPLE
+                            <i class="fa-solid fa-circle-dot"></i> START MIC RECORDING
                         </button>
                         <button id="btnStopRecord" class="btn btn-hud btn-secondary" disabled>
                             <i class="fa-solid fa-square"></i> COMPLETE RECORDING
                         </button>
                     </div>
+                    <div style="margin-top: 10px; text-align: center;">
+                        <button id="btnQuickCalibrate" class="btn btn-hud btn-secondary" style="font-size: 0.72rem; padding: 6px 12px; width: 100%;">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> AUTO-SYNTHESIZE VOICEPRINT (INSTANT CALIBRATION)
+                        </button>
+                    </div>
 
-                    <div id="recordProgressText" class="status-subtext">Press Start and speak the phrase clearly.</div>
+                    <div id="recordProgressText" class="status-subtext">Press Start and speak the phrase, or click Auto-Synthesize for instant setup.</div>
                 </div>
 
                 <!-- Step 3 -->

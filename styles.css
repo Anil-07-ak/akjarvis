@@ -167,26 +167,24 @@ body::after {
     letter-spacing: 3px;
 }
 
-.logo-reactor-icon {
+.logo-brain-icon {
     position: relative;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     border: 2px solid var(--primary);
-    box-shadow: 0 0 12px var(--primary-glow);
+    box-shadow: 0 0 15px var(--primary-glow);
     display: flex;
     align-items: center;
     justify-content: center;
+    color: var(--primary);
+    font-size: 1.1rem;
+    animation: brainPulse 2s infinite ease-in-out;
 }
 
-.logo-reactor-icon::after {
-    content: '';
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 0 8px #fff;
-    animation: blinker 1.5s infinite alternate;
+@keyframes brainPulse {
+    0%, 100% { transform: scale(1); filter: drop-shadow(0 0 6px var(--primary-glow)); }
+    50% { transform: scale(1.08); filter: drop-shadow(0 0 14px var(--primary)); }
 }
 
 .subtitle {
@@ -553,22 +551,209 @@ body::after {
 .btn-success { background: rgba(0, 255, 170, 0.22); color: #00ffaa; border-color: #00ffaa; }
 .btn-danger { background: rgba(255, 42, 85, 0.22); color: #ff2a55; border-color: #ff2a55; }
 
-.strict-mode-indicator {
+/* Master Voice Biometric Toggle & Live Match Meter */
+.bio-master-toggle-box {
+    background: rgba(0, 240, 255, 0.06);
+    border: 1px solid rgba(var(--primary-rgb), 0.35);
+    border-radius: 8px;
+    padding: 10px 12px;
+    box-shadow: inset 0 0 12px rgba(var(--primary-rgb), 0.08);
+}
+
+.toggle-switch-label {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    cursor: pointer;
+    gap: 10px;
+}
+
+.toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.toggle-title {
+    font-family: var(--font-head);
     font-size: 0.78rem;
+    font-weight: 800;
+    color: var(--text-main);
+    letter-spacing: 0.8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.toggle-desc {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+}
+
+/* Switch UI */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(255, 255, 255, 0.15);
+    transition: 0.3s;
+    border-radius: 24px;
+    border: 1px solid rgba(var(--primary-rgb), 0.3);
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: #fff;
+    transition: 0.3s;
+    border-radius: 50%;
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+}
+
+input:checked + .slider {
+    background-color: var(--primary);
+    box-shadow: 0 0 14px var(--primary-glow);
+}
+
+input:checked + .slider:before {
+    transform: translateX(20px);
+    background-color: #020610;
+}
+
+/* Real-Time Voice Biometric Match Meter */
+.bio-meter-card {
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(var(--primary-rgb), 0.2);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.meter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.74rem;
+}
+
+.meter-label {
+    font-family: var(--font-head);
+    color: var(--text-muted);
+    letter-spacing: 0.8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.meter-val {
+    font-weight: 700;
+    color: var(--primary);
+    text-shadow: 0 0 8px var(--primary-glow);
+}
+
+.meter-bar-track {
+    position: relative;
+    height: 9px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 5px;
+    border: 1px solid rgba(var(--primary-rgb), 0.25);
+    overflow: hidden;
+}
+
+.meter-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #ff2a55 0%, #ffaa00 50%, #00ffaa 100%);
+    box-shadow: 0 0 10px var(--primary-glow);
+    transition: width 0.2s ease;
+}
+
+.meter-threshold-line {
+    position: absolute;
+    top: 0;
+    left: 60%;
+    width: 2px;
+    height: 100%;
+    background: #ffffff;
+    box-shadow: 0 0 6px #fff;
+    z-index: 2;
+}
+
+.meter-labels {
+    display: flex;
+    justify-content: space-between;
     font-family: var(--font-mono);
-    background: rgba(0,0,0,0.3);
-    padding: 6px 12px;
-    border-radius: 6px;
-    border: 1px solid rgba(var(--primary-rgb), 0.12);
+    font-size: 0.64rem;
+    color: var(--text-muted);
+}
+
+.threshold-label {
+    color: var(--primary);
+}
+
+/* Sensitivity Selector */
+.bio-sensitivity-selector {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.sub-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    letter-spacing: 0.8px;
+}
+
+.btn-group-sensitivity {
+    display: flex;
+    gap: 4px;
+}
+
+.sens-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.sens-btn.active, .sens-btn:hover {
+    background: rgba(var(--primary-rgb), 0.2);
+    border-color: var(--primary);
+    color: var(--primary);
+    box-shadow: 0 0 8px var(--primary-dim);
 }
 
 .badge {
-    padding: 4px 10px;
+    padding: 3px 8px;
     border-radius: 4px;
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     font-weight: 700;
 }
 .badge-active { background: rgba(0, 255, 170, 0.2); color: #00ffaa; border: 1px solid #00ffaa; }
@@ -606,70 +791,184 @@ body::after {
 .dot.stealth { background: #00ffaa; box-shadow: 0 0 8px #00ffaa; }
 .dot.crimson { background: #ff0055; box-shadow: 0 0 8px #ff0055; }
 
-/* Center Panel: Holographic Arc Reactor & Visualizer */
+/* Center Panel: Holographic Neural Brain & Speech Visualizer */
 .center-panel {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: space-between;
-    padding: 24px;
-    background: radial-gradient(circle at center, rgba(var(--primary-rgb), 0.12) 0%, rgba(2, 6, 16, 0.9) 80%);
+    padding: 20px 24px;
+    background: radial-gradient(circle at center, rgba(var(--primary-rgb), 0.14) 0%, rgba(2, 6, 16, 0.94) 80%);
     position: relative;
+    overflow: hidden;
 }
 
-.center-panel::before {
-    content: '';
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 360px; height: 360px;
-    border-radius: 50%;
-    border: 1px dashed rgba(var(--primary-rgb), 0.25);
-    pointer-events: none;
-    animation: spin 30s linear infinite;
-}
-
-.arc-container {
+/* Vibrating Holographic Brain Container */
+.brain-container {
     position: relative;
-    width: 340px;
+    width: 380px;
     height: 340px;
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-top: 5px;
+    cursor: pointer;
+    perspective: 1000px;
 }
 
-#arcCanvas {
+/* Concentric Vibration Wave Rings */
+.vibration-wave-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 1px dashed rgba(var(--primary-rgb), 0.35);
+    pointer-events: none;
+    box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.08);
+}
+
+.ring-1 {
+    width: 290px;
+    height: 270px;
+    animation: brainWavePulse 4s infinite linear;
+}
+
+.ring-2 {
+    width: 340px;
+    height: 310px;
+    border-style: dotted;
+    opacity: 0.6;
+    animation: brainWavePulse 6s infinite linear reverse;
+}
+
+.ring-3 {
+    width: 380px;
+    height: 340px;
+    border-width: 1px;
+    opacity: 0.3;
+    animation: brainWavePulse 9s infinite linear;
+}
+
+@keyframes brainWavePulse {
+    0% { transform: translate(-50%, -50%) rotate(0deg) scale(0.98); }
+    50% { transform: translate(-50%, -50%) rotate(180deg) scale(1.03); }
+    100% { transform: translate(-50%, -50%) rotate(360deg) scale(0.98); }
+}
+
+/* Brain Tremor Vibrations in Different States */
+.brain-container.vibrating {
+    animation: brainTremorActive 0.08s infinite alternate;
+}
+
+.brain-container.vibrating-heavy {
+    animation: brainTremorHeavy 0.05s infinite alternate;
+}
+
+.brain-container.alert-vibrating {
+    animation: brainTremorAlert 0.06s infinite alternate;
+}
+
+@keyframes brainTremorActive {
+    0% { transform: translate(-1.5px, 0.5px); }
+    50% { transform: translate(1px, -1.2px); }
+    100% { transform: translate(-0.8px, -0.6px); }
+}
+
+@keyframes brainTremorHeavy {
+    0% { transform: translate(-3.5px, 2px) scale(1.02); }
+    33% { transform: translate(3px, -2.5px) scale(0.99); }
+    66% { transform: translate(-2px, 3px) scale(1.02); }
+    100% { transform: translate(2.5px, -1.5px) scale(1); }
+}
+
+@keyframes brainTremorAlert {
+    0% { transform: translate(-4px, 3px) rotate(-1deg); filter: drop-shadow(0 0 25px rgba(255, 42, 85, 0.9)); }
+    50% { transform: translate(4px, -3px) rotate(1deg); filter: drop-shadow(0 0 35px rgba(255, 42, 85, 1)); }
+    100% { transform: translate(-3px, 2px) rotate(0deg); }
+}
+
+#brainCanvas {
     width: 100%;
     height: 100%;
     cursor: pointer;
     filter: drop-shadow(0 0 25px var(--primary-glow));
-    transition: transform 0.3s ease;
+    transition: transform 0.25s ease, filter 0.25s ease;
 }
 
-#arcCanvas:hover {
+#brainCanvas:hover {
     transform: scale(1.03);
+    filter: drop-shadow(0 0 35px var(--primary));
 }
 
-.arc-overlay-info {
+.brain-overlay-info {
     position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
     pointer-events: none;
     text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
 }
 
 .state-tag {
     font-family: var(--font-head);
-    font-size: 0.9rem;
+    font-size: 0.84rem;
     font-weight: 800;
     color: var(--primary);
-    letter-spacing: 2.5px;
+    letter-spacing: 2px;
     text-shadow: 0 0 15px var(--primary-glow);
-    background: rgba(2, 8, 20, 0.85);
+    background: rgba(2, 8, 20, 0.88);
     backdrop-filter: blur(8px);
-    padding: 6px 16px;
+    padding: 5px 14px;
     border-radius: 20px;
     border: 1px solid var(--primary-border);
     box-shadow: 0 0 20px var(--primary-dim);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+}
+
+.state-tag.state-listening {
+    color: #00ffaa;
+    border-color: #00ffaa;
+    box-shadow: 0 0 25px rgba(0, 255, 170, 0.6);
+}
+
+.state-tag.state-processing {
+    color: #ffaa00;
+    border-color: #ffaa00;
+    box-shadow: 0 0 25px rgba(255, 170, 0, 0.6);
+}
+
+.state-tag.state-security_alert {
+    color: #ff2a55;
+    border-color: #ff2a55;
+    box-shadow: 0 0 30px rgba(255, 42, 85, 0.8);
+}
+
+.brain-telemetry {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.brain-chip {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.65);
+    border: 1px solid rgba(var(--primary-rgb), 0.25);
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 }
 
 /* Audio Visualizer Canvas */

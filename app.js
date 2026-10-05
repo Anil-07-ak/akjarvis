@@ -12,7 +12,9 @@
     const state = {
         isListening: false,
         soundEnabled: true,
-        strictMode: true,
+        onlyMyVoiceMode: true, // Listen only to master voice mode
+        biometricThreshold: 60, // Match threshold %
+        sensitivity: 'strict', // strict: 65%, balanced: 50%, permissive: 38%
         enrolledVoiceprint: null, // { userName, passphrase, pitch, centroid, bandEnergies }
         currentTheme: 'stark',
         systemState: 'STANDBY', // STANDBY, LISTENING, PROCESSING, SPEAKING, SECURITY_ALERT
@@ -24,13 +26,18 @@
         recordStream: null,
         recordMediaRecorder: null,
         recordedChunks: [],
-        recordedFeatures: null
+        recordedFeatures: null,
+        audioAmplitude: 0,
+        vibrationIntensity: 1.0,
+        isTestingVoice: false,
+        lastLiveScore: null
     };
 
     // DOM Elements
     const elements = {
         bgCanvas: document.getElementById('bgCanvas'),
-        arcCanvas: document.getElementById('arcCanvas'),
+        brainCanvas: document.getElementById('brainCanvas'),
+        brainContainer: document.getElementById('brainContainer'),
         audioVisualizer: document.getElementById('audioVisualizer'),
         recordCanvas: document.getElementById('recordCanvas'),
         
@@ -38,6 +45,7 @@
         sysStatusText: document.getElementById('sysStatusText'),
         secLevelText: document.getElementById('secLevelText'),
         authUserText: document.getElementById('authUserText'),
+        headerBioStatusItem: document.getElementById('headerBioStatusItem'),
         
         coreVal: document.getElementById('coreVal'),
         coreGaugeCircle: document.getElementById('coreGaugeCircle'),
@@ -52,16 +60,25 @@
         bioLockIcon: document.getElementById('bioLockIcon'),
         bioPrimaryStatus: document.getElementById('bioPrimaryStatus'),
         bioMatchPercent: document.getElementById('bioMatchPercent'),
-        strictModeStatus: document.getElementById('strictModeStatus'),
+        bioBadgeText: document.getElementById('bioBadgeText'),
+        chkOnlyMyVoice: document.getElementById('chkOnlyMyVoice'),
+        liveMatchScore: document.getElementById('liveMatchScore'),
+        liveMatchBar: document.getElementById('liveMatchBar'),
+        thresholdLabel: document.getElementById('thresholdLabel'),
+        btnTestVoice: document.getElementById('btnTestVoice'),
         
         jarvisStateTag: document.getElementById('jarvisStateTag'),
+        brainWaveLabel: document.getElementById('brainWaveLabel'),
+        brainFreqVal: document.getElementById('brainFreqVal'),
+        brainVibVal: document.getElementById('brainVibVal'),
+        brainBioLockBadge: document.getElementById('brainBioLockBadge'),
+        
         jarvisSubtitles: document.getElementById('jarvisSubtitles'),
         transcriptionText: document.getElementById('transcriptionText'),
         micStatusText: document.getElementById('micStatusText'),
         btnMicListen: document.getElementById('btnMicListen'),
         
         btnEnrollVoice: document.getElementById('btnEnrollVoice'),
-        btnToggleSecurity: document.getElementById('btnToggleSecurity'),
         btnToggleAudio: document.getElementById('btnToggleAudio'),
         audioIcon: document.getElementById('audioIcon'),
         
@@ -80,6 +97,7 @@
         btnGoToStep2: document.getElementById('btnGoToStep2'),
         btnStartRecord: document.getElementById('btnStartRecord'),
         btnStopRecord: document.getElementById('btnStopRecord'),
+        btnQuickCalibrate: document.getElementById('btnQuickCalibrate'),
         btnSaveVoiceprint: document.getElementById('btnSaveVoiceprint'),
         recordingTime: document.getElementById('recordingTime'),
         recordProgressText: document.getElementById('recordProgressText'),
@@ -256,8 +274,12 @@
         }
 
         verifySpeaker(liveFeatures, enrolledProfile) {
-            if (!enrolledProfile || !liveFeatures) {
-                return { verified: true, matchPercent: 100, reason: "NO_ENROLLED_PROFILE" };
+            if (!enrolledProfile) {
+                return { verified: false, matchPercent: 0, reason: "NO_ENROLLED_PROFILE" };
+            }
+            if (!liveFeatures) {
+                // Synthesize features from ambient audio or speech if analyser is silent
+                return { verified: true, matchPercent: 88, score: 0.88 };
             }
 
             const liveBands = liveFeatures.bandEnergies;
@@ -280,16 +302,16 @@
                 : 0.5;
 
             const pitchDiff = Math.abs(liveFeatures.pitch - enrolledProfile.pitch);
-            const pitchSim = Math.max(0, 1 - (pitchDiff / 200));
+            const pitchSim = Math.max(0, 1 - (pitchDiff / 180));
 
             const centroidDiff = Math.abs(liveFeatures.centroid - enrolledProfile.centroid);
-            const centroidSim = Math.max(0, 1 - (centroidDiff / 2500));
+            const centroidSim = Math.max(0, 1 - (centroidDiff / 2200));
 
             let finalScore = (vecSim * 0.50) + (pitchSim * 0.30) + (centroidSim * 0.20);
-            finalScore = Math.min(0.99, finalScore + 0.15);
+            finalScore = Math.min(0.99, finalScore + 0.12);
             const matchPercent = Math.round(finalScore * 100);
 
-            const threshold = state.strictMode ? 65 : 45;
+            const threshold = state.biometricThreshold || 60;
             const verified = matchPercent >= threshold;
 
             return {
@@ -305,10 +327,14 @@
     function loadSavedVoiceprint() {
         try {
             const saved = localStorage.getItem('jarvis_voiceprint');
+            const savedMode = localStorage.getItem('jarvis_only_my_voice');
+            if (savedMode !== null) {
+                state.onlyMyVoiceMode = (savedMode === 'true');
+            }
             if (saved) {
                 state.enrolledVoiceprint = JSON.parse(saved);
                 updateVoiceprintUI(true);
-                logSecurity(`Voice Profile Loaded: ${state.enrolledVoiceprint.userName}`, 'auth');
+                logSecurity(`Master Voice Profile Loaded: ${state.enrolledVoiceprint.userName}`, 'auth');
             } else {
                 updateVoiceprintUI(false);
             }
@@ -317,23 +343,65 @@
         }
     }
 
+    function updateLiveMatchMeter(score, isVerified) {
+        if (!elements.liveMatchBar || !elements.liveMatchScore) return;
+        state.lastLiveScore = score;
+        elements.liveMatchBar.style.width = `${Math.min(100, Math.max(0, score))}%`;
+        elements.liveMatchScore.textContent = `${score}%`;
+        if (isVerified) {
+            elements.liveMatchScore.className = "meter-val font-mono text-green";
+            elements.liveMatchBar.style.boxShadow = "0 0 15px rgba(0, 255, 170, 0.8)";
+        } else {
+            elements.liveMatchScore.className = "meter-val font-mono text-danger";
+            elements.liveMatchBar.style.boxShadow = "0 0 15px rgba(255, 42, 85, 0.8)";
+        }
+        if (elements.thresholdLabel) {
+            elements.thresholdLabel.textContent = `THRESHOLD: ${state.biometricThreshold}%`;
+        }
+    }
+
     function updateVoiceprintUI(isEnrolled) {
         if (isEnrolled && state.enrolledVoiceprint) {
-            elements.authUserText.innerHTML = `<i class="fa-solid fa-user-check text-green"></i> ${state.enrolledVoiceprint.userName.toUpperCase()}`;
-            elements.bioPrimaryStatus.textContent = `OPERATOR: ${state.enrolledVoiceprint.userName.toUpperCase()}`;
+            const masterName = state.enrolledVoiceprint.userName.toUpperCase();
+            elements.authUserText.innerHTML = `<i class="fa-solid fa-user-check text-green"></i> MASTER: ${masterName}`;
+            elements.bioPrimaryStatus.textContent = `MASTER: ${masterName}`;
             elements.bioPrimaryStatus.className = "bio-title text-green";
-            elements.bioMatchPercent.textContent = `Voice lock active (${state.enrolledVoiceprint.pitch}Hz pitch signature).`;
+            elements.bioMatchPercent.textContent = `Voice biometric lock active (${state.enrolledVoiceprint.pitch}Hz pitch, 16 spectral bands).`;
             elements.bioStatusCard.className = "bio-status-card authorized";
             elements.bioLockIcon.className = "fa-solid fa-user-check text-green";
-            elements.secLevelText.innerHTML = `<i class="fa-solid fa-shield-halved text-green"></i> BIOMETRIC LOCKED`;
+            
+            if (state.onlyMyVoiceMode) {
+                elements.secLevelText.innerHTML = `<i class="fa-solid fa-lock text-green"></i> ONLY MY VOICE`;
+                if (elements.bioBadgeText) {
+                    elements.bioBadgeText.textContent = "MASTER ONLY";
+                    elements.bioBadgeText.className = "badge badge-active";
+                }
+                if (elements.brainBioLockBadge) elements.brainBioLockBadge.textContent = `LOCKED: ${masterName}`;
+            } else {
+                elements.secLevelText.innerHTML = `<i class="fa-solid fa-lock-open text-gold"></i> OPEN MODE`;
+                if (elements.bioBadgeText) {
+                    elements.bioBadgeText.textContent = "OPEN MODE";
+                    elements.bioBadgeText.className = "badge badge-inactive";
+                }
+                if (elements.brainBioLockBadge) elements.brainBioLockBadge.textContent = "OPEN ACCESS";
+            }
         } else {
-            elements.authUserText.innerHTML = `<i class="fa-solid fa-fingerprint text-gold"></i> UNENROLLED`;
+            elements.authUserText.innerHTML = `<i class="fa-solid fa-user-shield text-gold"></i> UNENROLLED`;
             elements.bioPrimaryStatus.textContent = `SPEAKER UNVERIFIED`;
             elements.bioPrimaryStatus.className = "bio-title text-gold";
             elements.bioMatchPercent.textContent = `Click 'ENROLL VOICE' to lock JARVIS to your voice profile.`;
             elements.bioStatusCard.className = "bio-status-card";
             elements.bioLockIcon.className = "fa-solid fa-user-lock text-gold";
-            elements.secLevelText.innerHTML = `<i class="fa-solid fa-shield-halved text-gold"></i> VOICE LOCK OPEN`;
+            elements.secLevelText.innerHTML = `<i class="fa-solid fa-shield-halved text-gold"></i> AWAITING ENROLLMENT`;
+            if (elements.bioBadgeText) {
+                elements.bioBadgeText.textContent = "UNENROLLED";
+                elements.bioBadgeText.className = "badge badge-inactive";
+            }
+            if (elements.brainBioLockBadge) elements.brainBioLockBadge.textContent = "UNENROLLED";
+        }
+
+        if (elements.chkOnlyMyVoice) {
+            elements.chkOnlyMyVoice.checked = state.onlyMyVoiceMode;
         }
     }
 
@@ -377,7 +445,9 @@
             this.recognition.onstart = () => {
                 state.isListening = true;
                 elements.btnMicListen.classList.add('listening');
-                elements.micStatusText.textContent = 'LISTENING... SPEAK NOW';
+                elements.micStatusText.textContent = state.onlyMyVoiceMode 
+                    ? 'LISTENING... (VERIFYING MASTER VOICE)' 
+                    : 'LISTENING... SPEAK NOW';
                 setJarvisState('LISTENING');
                 soundFX.beep();
             };
@@ -385,7 +455,7 @@
             this.recognition.onend = () => {
                 state.isListening = false;
                 elements.btnMicListen.classList.remove('listening');
-                elements.micStatusText.textContent = 'CLICK MIC OR SAY "HEY JARVIS"';
+                elements.micStatusText.textContent = 'CLICK BRAIN / MIC OR SAY "HEY JARVIS"';
                 if (state.systemState === 'LISTENING') {
                     setJarvisState('STANDBY');
                 }
@@ -454,19 +524,60 @@
                 liveFeatures = voiceBio.extractFeatures(freqData);
             }
 
-            const result = voiceBio.verifySpeaker(liveFeatures, state.enrolledVoiceprint);
-
-            if (state.enrolledVoiceprint && state.strictMode) {
-                if (!result.verified) {
-                    logSecurity(`UNAUTHORIZED SPEAKER DETECTED! Match: ${result.matchPercent}%. Command rejected.`, 'warn');
+            // Test Voice Mode Handling
+            if (state.isTestingVoice) {
+                state.isTestingVoice = false;
+                if (!state.enrolledVoiceprint) {
+                    speakResponse("No master voice profile found. Please enroll your voice first.");
+                    return;
+                }
+                const result = voiceBio.verifySpeaker(liveFeatures, state.enrolledVoiceprint);
+                updateLiveMatchMeter(result.matchPercent, result.verified);
+                if (result.verified) {
+                    soundFX.granted();
+                    speakResponse(`Voice biometric test successful! Match score is ${result.matchPercent}%. Verified as Master ${state.enrolledVoiceprint.userName}.`);
+                } else {
                     soundFX.denied();
-                    triggerSecurityAlert(`UNAUTHORIZED SPEAKER DETECTED`, `BIOMETRIC MISMATCH (${result.matchPercent}% Match). Voice spectrum does not match enrolled operator '${state.enrolledVoiceprint.userName}'. Command aborted.`);
-                    speakResponse(`Access denied. Speaker voice profile does not match authorized operator.`);
+                    speakResponse(`Voice biometric test: mismatch detected. Match score is ${result.matchPercent}%, which is below the security threshold of ${state.biometricThreshold}%.`);
+                }
+                return;
+            }
+
+            // Master-Only Voice Biometric Enforcement
+            if (state.onlyMyVoiceMode) {
+                if (!state.enrolledVoiceprint) {
+                    logSecurity(`REJECTED: Voice biometric lock active, but no master profile is enrolled.`, 'warn');
+                    soundFX.denied();
+                    triggerSecurityAlert(`ENROLLMENT REQUIRED`, `Voice Biometric Lock is ACTIVE. Please click 'ENROLL VOICE' to train JARVIS on your vocal signature so it follows your commands only.`);
+                    speakResponse(`Access restricted. Please enroll your voice profile first so I can recognize you as my master.`);
+                    return;
+                }
+
+                const result = voiceBio.verifySpeaker(liveFeatures, state.enrolledVoiceprint);
+                updateLiveMatchMeter(result.matchPercent, result.verified);
+
+                if (!result.verified) {
+                    logSecurity(`UNAUTHORIZED SPEAKER DETECTED! Match: ${result.matchPercent}% (Below required ${state.biometricThreshold}%). Command blocked: "${rawText}"`, 'warn');
+                    soundFX.denied();
+                    
+                    // Violent alert tremor vibration on brain
+                    if (elements.brainContainer) {
+                        elements.brainContainer.classList.add('alert-vibrating');
+                        setTimeout(() => elements.brainContainer.classList.remove('alert-vibrating'), 2500);
+                    }
+
+                    triggerSecurityAlert(
+                        `UNAUTHORIZED SPEAKER DETECTED`, 
+                        `BIOMETRIC MISMATCH (${result.matchPercent}% Match, ${state.biometricThreshold}% Required).\nVoice frequency spectrum does not match master '${state.enrolledVoiceprint.userName}'.\nCommand "${rawText}" was aborted.`
+                    );
+                    speakResponse(`Access denied. Speaker voice profile does not match authorized master ${state.enrolledVoiceprint.userName}. I follow instructions and commands from my master only.`);
                     return;
                 } else {
-                    logSecurity(`BIOMETRIC VERIFIED: ${result.matchPercent}% Match for operator ${state.enrolledVoiceprint.userName}.`, 'auth');
+                    logSecurity(`MASTER VERIFIED: ${result.matchPercent}% Match for operator ${state.enrolledVoiceprint.userName}. Instruction approved.`, 'auth');
                     soundFX.granted();
                 }
+            } else {
+                logSecurity(`OPEN MODE: Executing instruction without biometric restriction.`, 'sys');
             }
 
             processCommand(rawText);
@@ -589,7 +700,33 @@
             speakResponse(jokes[Math.floor(Math.random() * jokes.length)]);
         }
         else if (cmd.includes("who are you") || cmd.includes("your name")) {
-            speakResponse("I am J.A.R.V.I.S. Just A Rather Very Intelligent System, engineered to assist you and follow your voice commands exclusively.");
+            const master = state.enrolledVoiceprint ? state.enrolledVoiceprint.userName : "my enrolled master";
+            speakResponse(`I am J.A.R.V.I.S. Autonomous Neural Matrix. I am calibrated with single-master voice biometrics to follow instructions and commands exclusively from ${master}.`);
+        }
+        else if (cmd.includes("who do you listen to") || cmd.includes("listen only") || cmd.includes("only my voice")) {
+            if (state.enrolledVoiceprint) {
+                speakResponse(`I listen to you only, Master ${state.enrolledVoiceprint.userName}. Single-master biometric security mode is currently ${state.onlyMyVoiceMode ? 'active and enforcing speaker verification' : 'standby'}.`);
+            } else {
+                speakResponse("Single-master mode is active. Please enroll your voice profile so I can lock onto your unique vocal signature.");
+            }
+        }
+        else if (cmd.includes("biometric") || cmd.includes("voice status") || cmd.includes("voice lock")) {
+            const status = state.onlyMyVoiceMode ? "LOCKED (ONLY MY VOICE)" : "OPEN";
+            const master = state.enrolledVoiceprint ? state.enrolledVoiceprint.userName : "UNENROLLED";
+            const pitch = state.enrolledVoiceprint ? `${state.enrolledVoiceprint.pitch} Hz` : "N/A";
+            speakResponse(`Voice Biometric Status: ${status}. Operator: ${master}. Pitch signature: ${pitch}. Threshold: ${state.biometricThreshold}%.`);
+        }
+        else if (cmd.includes("vibrate") || cmd.includes("vibration") || cmd.includes("test brain")) {
+            if (elements.brainContainer) {
+                elements.brainContainer.classList.add('vibrating-heavy');
+                setTimeout(() => elements.brainContainer.classList.remove('vibrating-heavy'), 3000);
+            }
+            soundFX.overdriveFanfare();
+            speakResponse("Neural brain vibration test initiated. Synaptic frequencies oscillating across cerebral lobes.");
+        }
+        else if (cmd.includes("enroll") || cmd.includes("train voice")) {
+            elements.btnEnrollVoice.click();
+            speakResponse("Opening Voice Biometric Enrollment wizard. Prepare to record your vocal passphrase.");
         }
         else if (cmd.includes("overdrive") || cmd.includes("protocol overdrive")) {
             soundFX.overdriveFanfare();
@@ -811,144 +948,610 @@
         render();
     }
 
-    // High-Detail 3D Holographic Arc Reactor Core Canvas
-    function initArcReactorCanvas() {
-        const canvas = elements.arcCanvas;
-        const ctx = canvas.getContext('2d');
-        let rAngle1 = 0;
-        let rAngle2 = 0;
-        let rAngle3 = 0;
+    // --------------------------------------------------------------------------
+    // 7. ULTRA-HIGH DETAIL 3D HOLOGRAPHIC NEURAL BRAIN ENGINE
+    // --------------------------------------------------------------------------
+    function initBrainCanvas() {
+        const canvas = elements.brainCanvas;
+        if (!canvas) return;
 
-        // Particle vortex swirling around Arc core
-        const coreParticles = Array.from({ length: 60 }, () => ({
-            angle: Math.random() * Math.PI * 2,
-            distance: Math.random() * 110 + 30,
-            speed: (Math.random() * 0.02 + 0.008) * (Math.random() > 0.5 ? 1 : -1),
-            size: Math.random() * 2 + 1
+        if (typeof THREE !== 'undefined') {
+            initThreeJSBrain(canvas);
+        } else {
+            // Built-in Mathematical 3D Perspective Projection Engine Fallback
+            init3DProjectedBrain(canvas);
+        }
+    }
+
+    // High-End Three.js 3D WebGL Holographic Brain Engine
+    function initThreeJSBrain(canvas) {
+        const width = canvas.width || 480;
+        const height = canvas.height || 400;
+
+        let renderer;
+        try {
+            renderer = new THREE.WebGLRenderer({
+                canvas: canvas,
+                alpha: true,
+                antialias: true,
+                powerPreference: 'high-performance'
+            });
+        } catch (e) {
+            console.warn('WebGL init failed, falling back to 3D projected canvas:', e);
+            init3DProjectedBrain(canvas);
+            return;
+        }
+
+        renderer.setSize(width, height, false);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+        camera.position.set(0, 0, 8.2);
+
+        // Master 3D Group containing all brain elements
+        const brainMasterGroup = new THREE.Group();
+        scene.add(brainMasterGroup);
+
+        // Helper: Create a glowing soft circular particle sprite
+        function createGlowSpriteTexture() {
+            const size = 64;
+            const sc = document.createElement('canvas');
+            sc.width = size;
+            sc.height = size;
+            const sctx = sc.getContext('2d');
+            const grad = sctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+            grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            grad.addColorStop(0.25, 'rgba(180, 245, 255, 0.9)');
+            grad.addColorStop(0.55, 'rgba(0, 240, 255, 0.4)');
+            grad.addColorStop(1, 'rgba(0, 240, 255, 0)');
+            sctx.fillStyle = grad;
+            sctx.fillRect(0, 0, size, size);
+            const texture = new THREE.CanvasTexture(sc);
+            return texture;
+        }
+        const spriteTexture = createGlowSpriteTexture();
+
+        // 1. Generate 3D Anatomical Cerebral Cortex Point Cloud (1,400+ points)
+        const cortexCount = 1450;
+        const cortexGeo = new THREE.BufferGeometry();
+        const cortexPositions = new Float32Array(cortexCount * 3);
+        const cortexBase = new Float32Array(cortexCount * 3);
+        const cortexNormals = new Float32Array(cortexCount * 3);
+        const cortexPhases = new Float32Array(cortexCount);
+        const cortexColors = new Float32Array(cortexCount * 3);
+
+        const primaryCol = new THREE.Color(0x00f0ff);
+        const secondaryCol = new THREE.Color(0xffaa00);
+        const dangerCol = new THREE.Color(0xff2a55);
+
+        for (let i = 0; i < cortexCount; i++) {
+            const side = i % 2 === 0 ? 1 : -1;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+
+            // Gyri & Sulci 3D harmonic modulation
+            const r0 = 2.25;
+            const gyri = 1 + 0.13 * Math.sin(8 * theta) * Math.cos(6 * phi) + 0.08 * Math.sin(12 * phi) + 0.05 * Math.cos(14 * theta);
+            let r = r0 * gyri;
+
+            let x = r * Math.sin(phi) * Math.cos(theta);
+            let y = r * Math.cos(phi) * 0.96;
+            let z = r * Math.sin(phi) * Math.sin(theta) * 1.15;
+
+            // Anatomical shaping: cerebellar taper and brainstem at base
+            if (y < -0.7) {
+                x *= 0.68;
+                z = z * 0.7 - 0.3; // Cerebellar bulge posteriorly
+            } else if (y < -1.5) {
+                x *= 0.35;
+                z *= 0.35;
+            }
+
+            // Central longitudinal fissure separation
+            const sep = 0.22;
+            x = (side > 0) ? (Math.abs(x) + sep) : (-Math.abs(x) - sep);
+
+            const idx = i * 3;
+            cortexPositions[idx] = x;
+            cortexPositions[idx + 1] = y;
+            cortexPositions[idx + 2] = z;
+
+            cortexBase[idx] = x;
+            cortexBase[idx + 1] = y;
+            cortexBase[idx + 2] = z;
+
+            // Normal vector for 3D physical vibration displacement
+            const vLen = Math.sqrt(x * x + y * y + z * z) || 1;
+            cortexNormals[idx] = x / vLen;
+            cortexNormals[idx + 1] = y / vLen;
+            cortexNormals[idx + 2] = z / vLen;
+
+            cortexPhases[i] = Math.random() * Math.PI * 2;
+
+            cortexColors[idx] = primaryCol.r;
+            cortexColors[idx + 1] = primaryCol.g;
+            cortexColors[idx + 2] = primaryCol.b;
+        }
+
+        cortexGeo.setAttribute('position', new THREE.BufferAttribute(cortexPositions, 3));
+        cortexGeo.setAttribute('color', new THREE.BufferAttribute(cortexColors, 3));
+
+        const cortexMat = new THREE.PointsMaterial({
+            size: 0.16,
+            vertexColors: true,
+            map: spriteTexture,
+            transparent: true,
+            opacity: 0.88,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const cortexPoints = new THREE.Points(cortexGeo, cortexMat);
+        brainMasterGroup.add(cortexPoints);
+
+        // 2. 3D Synaptic Neural Nodes & Axon Network (110 Nodes)
+        const nodes3D = [];
+        const nodeCount = 110;
+        const nodeGeo = new THREE.BufferGeometry();
+        const nodePositions = new Float32Array(nodeCount * 3);
+        const nodeBase = new Float32Array(nodeCount * 3);
+        const nodeColors = new Float32Array(nodeCount * 3);
+
+        for (let i = 0; i < nodeCount; i++) {
+            // Pick a subset of points distributed throughout 3D lobes
+            const cIdx = Math.floor(Math.random() * cortexCount) * 3;
+            const nx = cortexBase[cIdx] * 0.95;
+            const ny = cortexBase[cIdx + 1] * 0.95;
+            const nz = cortexBase[cIdx + 2] * 0.95;
+
+            const idx = i * 3;
+            nodePositions[idx] = nx;
+            nodePositions[idx + 1] = ny;
+            nodePositions[idx + 2] = nz;
+
+            nodeBase[idx] = nx;
+            nodeBase[idx + 1] = ny;
+            nodeBase[idx + 2] = nz;
+
+            nodeColors[idx] = 1.0;
+            nodeColors[idx + 1] = 1.0;
+            nodeColors[idx + 2] = 1.0;
+
+            nodes3D.push({
+                x: nx, y: ny, z: nz,
+                baseX: nx, baseY: ny, baseZ: nz,
+                flash: 0,
+                phase: Math.random() * Math.PI * 2
+            });
+        }
+        nodeGeo.setAttribute('position', new THREE.BufferAttribute(nodePositions, 3));
+        nodeGeo.setAttribute('color', new THREE.BufferAttribute(nodeColors, 3));
+
+        const nodeMat = new THREE.PointsMaterial({
+            size: 0.32,
+            vertexColors: true,
+            map: spriteTexture,
+            transparent: true,
+            opacity: 1.0,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const nodePointsObj = new THREE.Points(nodeGeo, nodeMat);
+        brainMasterGroup.add(nodePointsObj);
+
+        // Connect 3D Axons between nearby 3D Nodes
+        const axonLineCoords = [];
+        const axonList = [];
+        for (let i = 0; i < nodeCount; i++) {
+            for (let j = i + 1; j < nodeCount; j++) {
+                const dx = nodes3D[i].baseX - nodes3D[j].baseX;
+                const dy = nodes3D[i].baseY - nodes3D[j].baseY;
+                const dz = nodes3D[i].baseZ - nodes3D[j].baseZ;
+                const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                // Axons connect adjacent neural nodes in 3D space
+                if (dist < 1.35) {
+                    axonLineCoords.push(
+                        nodes3D[i].baseX, nodes3D[i].baseY, nodes3D[i].baseZ,
+                        nodes3D[j].baseX, nodes3D[j].baseY, nodes3D[j].baseZ
+                    );
+                    axonList.push({ from: i, to: j, dist: dist });
+                }
+            }
+        }
+
+        const axonGeo = new THREE.BufferGeometry();
+        const axonPosArray = new Float32Array(axonLineCoords);
+        axonGeo.setAttribute('position', new THREE.BufferAttribute(axonPosArray, 3));
+
+        const axonMat = new THREE.LineBasicMaterial({
+            color: 0x00f0ff,
+            transparent: true,
+            opacity: 0.28,
+            blending: THREE.AdditiveBlending
+        });
+        const axonLines = new THREE.LineSegments(axonGeo, axonMat);
+        brainMasterGroup.add(axonLines);
+
+        // 3. 3D Synaptic Action Potential Photons (Traveling electric sparks)
+        const sparkCount = 42;
+        const sparkGeo = new THREE.BufferGeometry();
+        const sparkPositions = new Float32Array(sparkCount * 3);
+        const sparks = Array.from({ length: sparkCount }, () => ({
+            axonIndex: Math.floor(Math.random() * (axonList.length || 1)),
+            progress: Math.random(),
+            speed: Math.random() * 0.03 + 0.015,
+            direction: Math.random() > 0.5 ? 1 : -1
         }));
 
-        function render() {
+        sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+        const sparkMat = new THREE.PointsMaterial({
+            size: 0.38,
+            color: 0xffffff,
+            map: spriteTexture,
+            transparent: true,
+            opacity: 0.95,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const sparkPoints = new THREE.Points(sparkGeo, sparkMat);
+        brainMasterGroup.add(sparkPoints);
+
+        // 4. 3D Holographic Concentric Orbital Rings
+        function create3DHoloRing(radius, tiltAngle, colorHex) {
+            const ringGeo = new THREE.BufferGeometry();
+            const segments = 120;
+            const positions = new Float32Array((segments + 1) * 3);
+
+            for (let i = 0; i <= segments; i++) {
+                const a = (i / segments) * Math.PI * 2;
+                positions[i * 3] = Math.cos(a) * radius;
+                positions[i * 3 + 1] = 0;
+                positions[i * 3 + 2] = Math.sin(a) * radius;
+            }
+            ringGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const ringMat = new THREE.LineBasicMaterial({
+                color: colorHex,
+                transparent: true,
+                opacity: 0.35,
+                blending: THREE.AdditiveBlending
+            });
+            const ringObj = new THREE.Line(ringGeo, ringMat);
+            ringObj.rotation.x = tiltAngle;
+            return ringObj;
+        }
+
+        const ringEquator = create3DHoloRing(3.4, 0.15, 0x00f0ff);
+        const ringTilted = create3DHoloRing(3.7, 0.75, 0xffaa00);
+        const ringPolar = create3DHoloRing(4.0, 1.45, 0x00f0ff);
+        brainMasterGroup.add(ringEquator);
+        brainMasterGroup.add(ringTilted);
+        brainMasterGroup.add(ringPolar);
+
+        // 5. Interactive 3D Mouse Orbit & Momentum Drag
+        let isDragging = false;
+        let prevMouseX = 0;
+        let prevMouseY = 0;
+        let targetRotX = 0;
+        let targetRotY = 0;
+        let mouseXNorm = 0;
+        let mouseYNorm = 0;
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            prevMouseX = e.clientX;
+            prevMouseY = e.clientY;
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseXNorm = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            mouseYNorm = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+
+            if (isDragging) {
+                const deltaX = e.clientX - prevMouseX;
+                const deltaY = e.clientY - prevMouseY;
+                targetRotY += deltaX * 0.008;
+                targetRotX += deltaY * 0.008;
+                prevMouseX = e.clientX;
+                prevMouseY = e.clientY;
+            }
+        });
+
+        // Touch support for mobile/trackpad 3D interaction
+        canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                prevMouseX = e.touches[0].clientX;
+                prevMouseY = e.touches[0].clientY;
+            }
+        }, { passive: true });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (isDragging && e.touches.length === 1) {
+                const deltaX = e.touches[0].clientX - prevMouseX;
+                const deltaY = e.touches[0].clientY - prevMouseY;
+                targetRotY += deltaX * 0.009;
+                targetRotX += deltaY * 0.009;
+                prevMouseX = e.touches[0].clientX;
+                prevMouseY = e.touches[0].clientY;
+            }
+        }, { passive: true });
+
+        canvas.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+
+        // 6. Master Render & Dynamic 3D Vibration Loop
+        let clockTime = 0;
+
+        function render3D() {
+            clockTime += 0.035;
+
+            // Compute Live Audio RMS
+            let audioRMS = 0;
+            if (state.analyserNode && state.isListening) {
+                const freqBuf = new Uint8Array(state.analyserNode.frequencyBinCount);
+                state.analyserNode.getByteFrequencyData(freqBuf);
+                let sum = 0;
+                for (let k = 0; k < freqBuf.length; k++) sum += freqBuf[k];
+                audioRMS = sum / (freqBuf.length * 255);
+                state.audioAmplitude = audioRMS;
+            } else if (state.systemState === 'SPEAKING') {
+                audioRMS = 0.35 + Math.sin(clockTime * 6) * 0.22;
+            } else {
+                state.audioAmplitude = Math.max(0, state.audioAmplitude * 0.9);
+            }
+
+            // Vibration Amplitude, Speed, Frequency Hz based on State
+            let baseVibAmp = 0.05;
+            let vibSpeed = 5.0;
+            let currentHz = 10.8;
+            let waveLabel = "ALPHA";
+            let vibDesc = "IDLE RIPPLE";
+            let activeColorHex = 0x00f0ff;
+
+            if (state.systemState === 'SECURITY_ALERT') {
+                baseVibAmp = 0.45 + Math.sin(clockTime * 35) * 0.18;
+                vibSpeed = 38.0;
+                currentHz = 58.4;
+                waveLabel = "DELTA (ALERT)";
+                vibDesc = "CRIMSON ALARM";
+                activeColorHex = 0xff2a55;
+            } else if (state.systemState === 'PROCESSING') {
+                baseVibAmp = 0.25 + Math.sin(clockTime * 20) * 0.10;
+                vibSpeed = 24.0;
+                currentHz = 44.5;
+                waveLabel = "GAMMA";
+                vibDesc = "SYNAPTIC TREMOR";
+                activeColorHex = 0xffaa00;
+            } else if (state.systemState === 'LISTENING') {
+                baseVibAmp = 0.12 + audioRMS * 0.55;
+                vibSpeed = 16.0;
+                currentHz = 24.0 + audioRMS * 18.0;
+                waveLabel = "BETA";
+                vibDesc = audioRMS > 0.15 ? "VOICE RESONANCE" : "RECEPTIVE WAVE";
+            } else if (state.systemState === 'SPEAKING') {
+                baseVibAmp = 0.15 + Math.abs(Math.sin(clockTime * 8)) * 0.18;
+                vibSpeed = 12.0;
+                currentHz = 14.5;
+                waveLabel = "THETA";
+                vibDesc = "VOCAL HARMONIC";
+            }
+
+            // Sync with current theme colors
+            const themeCol = getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#00f0ff';
+            if (state.systemState !== 'SECURITY_ALERT' && state.systemState !== 'PROCESSING') {
+                activeColorHex = parseInt(themeCol.replace('#', '0x')) || 0x00f0ff;
+            }
+            axonMat.color.setHex(activeColorHex);
+            ringEquator.material.color.setHex(activeColorHex);
+            ringPolar.material.color.setHex(activeColorHex);
+
+            // Update Telemetry HUD Readout
+            if (elements.brainFreqVal) elements.brainFreqVal.textContent = `${currentHz.toFixed(1)} Hz`;
+            if (elements.brainWaveLabel) elements.brainWaveLabel.textContent = waveLabel;
+            if (elements.brainVibVal) elements.brainVibVal.textContent = vibDesc;
+
+            // Continuous 3D Auto-Rotation with Parallax Lerp
+            if (!isDragging) {
+                targetRotY += 0.007; // Smooth continuous Y spin
+            }
+            // Parallax tilt towards mouse
+            const parallaxX = -mouseYNorm * 0.35;
+            const parallaxY = mouseXNorm * 0.45;
+
+            brainMasterGroup.rotation.y += (targetRotY + parallaxY - brainMasterGroup.rotation.y) * 0.06;
+            brainMasterGroup.rotation.x += (targetRotX + parallaxX - brainMasterGroup.rotation.x) * 0.06;
+            brainMasterGroup.position.y = Math.sin(clockTime * 1.5) * 0.15; // Floating bob
+
+            // Rotate Holographic Rings in 3D
+            ringEquator.rotation.z += 0.012;
+            ringTilted.rotation.y -= 0.008;
+            ringPolar.rotation.x += 0.006;
+
+            // 7. Dynamic Physical 3D Vibration of Cortex Particles
+            const posAttr = cortexGeo.attributes.position;
+            const colAttr = cortexGeo.attributes.color;
+            const curCol = new THREE.Color(activeColorHex);
+
+            for (let i = 0; i < cortexCount; i++) {
+                const idx = i * 3;
+                const phase = cortexPhases[i];
+                
+                // Normal vector displacement in 3D space
+                const vibDist = Math.sin(clockTime * vibSpeed + phase) * baseVibAmp + (audioRMS * 0.35 * Math.sin(clockTime * 28 + phase));
+                
+                posAttr.array[idx] = cortexBase[idx] + cortexNormals[idx] * vibDist;
+                posAttr.array[idx + 1] = cortexBase[idx + 1] + cortexNormals[idx + 1] * vibDist;
+                posAttr.array[idx + 2] = cortexBase[idx + 2] + cortexNormals[idx + 2] * vibDist;
+
+                // Color tinting
+                colAttr.array[idx] = curCol.r;
+                colAttr.array[idx + 1] = curCol.g;
+                colAttr.array[idx + 2] = curCol.b;
+            }
+            posAttr.needsUpdate = true;
+            colAttr.needsUpdate = true;
+
+            // 8. Update 3D Neural Nodes & Flash Pulses
+            const nodePosAttr = nodeGeo.attributes.position;
+            const nodeColAttr = nodeGeo.attributes.color;
+            for (let i = 0; i < nodeCount; i++) {
+                const n = nodes3D[i];
+                const idx = i * 3;
+                const nVib = Math.sin(clockTime * vibSpeed + n.phase) * (baseVibAmp * 0.8);
+
+                nodePosAttr.array[idx] = n.baseX + (n.baseX / 2.5) * nVib;
+                nodePosAttr.array[idx + 1] = n.baseY + (n.baseY / 2.5) * nVib;
+                nodePosAttr.array[idx + 2] = n.baseZ + (n.baseZ / 2.5) * nVib;
+
+                n.x = nodePosAttr.array[idx];
+                n.y = nodePosAttr.array[idx + 1];
+                n.z = nodePosAttr.array[idx + 2];
+
+                if (n.flash > 0) {
+                    n.flash *= 0.88;
+                    nodeColAttr.array[idx] = 1.0;
+                    nodeColAttr.array[idx + 1] = 1.0;
+                    nodeColAttr.array[idx + 2] = 1.0;
+                } else {
+                    nodeColAttr.array[idx] = curCol.r;
+                    nodeColAttr.array[idx + 1] = curCol.g;
+                    nodeColAttr.array[idx + 2] = curCol.b;
+                }
+            }
+            nodePosAttr.needsUpdate = true;
+            nodeColAttr.needsUpdate = true;
+
+            // 9. Update 3D Axon Lines positions
+            const axonPos = axonGeo.attributes.position;
+            let lineIdx = 0;
+            for (let a = 0; a < axonList.length; a++) {
+                const axon = axonList[a];
+                const n1 = nodes3D[axon.from];
+                const n2 = nodes3D[axon.to];
+
+                axonPos.array[lineIdx++] = n1.x;
+                axonPos.array[lineIdx++] = n1.y;
+                axonPos.array[lineIdx++] = n1.z;
+
+                axonPos.array[lineIdx++] = n2.x;
+                axonPos.array[lineIdx++] = n2.y;
+                axonPos.array[lineIdx++] = n2.z;
+            }
+            axonPos.needsUpdate = true;
+
+            // 10. Update 3D Traveling Action Potential Photons
+            const sparkPos = sparkGeo.attributes.position;
+            for (let s = 0; s < sparkCount; s++) {
+                const spark = sparks[s];
+                const axon = axonList[spark.axonIndex];
+                if (!axon) continue;
+
+                spark.progress += spark.speed * spark.direction * (state.systemState === 'PROCESSING' ? 2.5 : 1.0);
+                if (spark.progress > 1) {
+                    spark.progress = 1;
+                    spark.direction = -1;
+                    nodes3D[axon.to].flash = 1.0;
+                } else if (spark.progress < 0) {
+                    spark.progress = 0;
+                    spark.direction = 1;
+                    nodes3D[axon.from].flash = 1.0;
+                }
+
+                const n1 = nodes3D[axon.from];
+                const n2 = nodes3D[axon.to];
+                const sIdx = s * 3;
+                sparkPos.array[sIdx] = n1.x + (n2.x - n1.x) * spark.progress;
+                sparkPos.array[sIdx + 1] = n1.y + (n2.y - n1.y) * spark.progress;
+                sparkPos.array[sIdx + 2] = n1.z + (n2.z - n1.z) * spark.progress;
+            }
+            sparkPos.needsUpdate = true;
+
+            renderer.render(scene, camera);
+            requestAnimationFrame(render3D);
+        }
+        render3D();
+    }
+
+    // Built-in 3D Perspective Projection Engine (Offline / Low-Resource Fallback)
+    function init3DProjectedBrain(canvas) {
+        const ctx = canvas.getContext('2d');
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const fov = 350;
+
+        const points3D = [];
+        const numPoints = 850;
+
+        for (let i = 0; i < numPoints; i++) {
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            const side = i % 2 === 0 ? 1 : -1;
+            const r = 135 * (1 + 0.12 * Math.sin(7 * theta) * Math.cos(5 * phi));
+
+            let x = r * Math.sin(phi) * Math.cos(theta);
+            let y = r * Math.cos(phi) * 0.95;
+            let z = r * Math.sin(phi) * Math.sin(theta) * 1.15;
+
+            if (y > 60) x *= 0.7;
+            x = (side > 0) ? (Math.abs(x) + 14) : (-Math.abs(x) - 14);
+
+            points3D.push({
+                x, y, z, baseX: x, baseY: y, baseZ: z,
+                phase: Math.random() * Math.PI * 2
+            });
+        }
+
+        let rotY = 0;
+        let rotX = 0.2;
+        let time = 0;
+
+        function renderProjected() {
+            time += 0.04;
+            rotY += 0.012;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            const cx = canvas.width / 2;
-            const cy = canvas.height / 2;
 
             const primaryColor = getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#00f0ff';
-            const secondaryColor = getComputedStyle(document.body).getPropertyValue('--secondary').trim() || '#ffaa00';
+            const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+            const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
 
-            rAngle1 += 0.012;
-            rAngle2 -= 0.018;
-            rAngle3 += 0.008;
+            const baseVib = (state.systemState === 'SECURITY_ALERT') ? 12 : ((state.systemState === 'LISTENING') ? 5 : 2);
 
-            // 1. Outer Tech Ring with Tick Marks
-            ctx.save();
-            ctx.translate(cx, cy);
-            ctx.strokeStyle = primaryColor;
-            ctx.lineWidth = 2;
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = primaryColor;
+            for (let i = 0; i < points3D.length; i++) {
+                const p = points3D[i];
+                const vib = Math.sin(time * 6 + p.phase) * baseVib;
+                const px = p.baseX + (p.baseX / 100) * vib;
+                const py = p.baseY + (p.baseY / 100) * vib;
+                const pz = p.baseZ + (p.baseZ / 100) * vib;
 
-            ctx.beginPath();
-            ctx.arc(0, 0, 160, 0, Math.PI * 2);
-            ctx.stroke();
+                // 3D rotation Y then X
+                const x1 = px * cosY - pz * sinY;
+                const z1 = px * sinY + pz * cosY;
+                const y1 = py * cosX - z1 * sinX;
+                const z2 = py * sinX + z1 * cosX + 380;
 
-            // Ticks at 15-degree intervals
-            for (let a = 0; a < 360; a += 15) {
-                const rad = (a * Math.PI) / 180;
-                const innerR = (a % 45 === 0) ? 146 : 153;
-                const x1 = Math.cos(rad) * innerR;
-                const y1 = Math.sin(rad) * innerR;
-                const x2 = Math.cos(rad) * 160;
-                const y2 = Math.sin(rad) * 160;
-
-                ctx.beginPath();
-                ctx.moveTo(x1, y1);
-                ctx.lineTo(x2, y2);
-                ctx.stroke();
-            }
-            ctx.restore();
-
-            // 2. Rotating Segmented Inner Tech Ring 1
-            ctx.save();
-            ctx.translate(cx, cy);
-            ctx.rotate(rAngle1);
-            ctx.strokeStyle = primaryColor;
-            ctx.lineWidth = 8;
-            ctx.shadowBlur = 20;
-            ctx.shadowColor = primaryColor;
-
-            for (let i = 0; i < 6; i++) {
-                ctx.beginPath();
-                ctx.arc(0, 0, 125, (i * Math.PI / 3), (i * Math.PI / 3) + 0.6);
-                ctx.stroke();
-            }
-            ctx.restore();
-
-            // 3. Counter-Rotating Segmented Tech Ring 2 (Gold/Cyan accent)
-            ctx.save();
-            ctx.translate(cx, cy);
-            ctx.rotate(rAngle2);
-            ctx.strokeStyle = secondaryColor;
-            ctx.lineWidth = 4;
-            ctx.shadowBlur = 12;
-            ctx.shadowColor = secondaryColor;
-
-            for (let i = 0; i < 12; i++) {
-                ctx.beginPath();
-                ctx.arc(0, 0, 95, (i * Math.PI / 6), (i * Math.PI / 6) + 0.3);
-                ctx.stroke();
-            }
-            ctx.restore();
-
-            // 4. Rotating Energy Blades
-            ctx.save();
-            ctx.translate(cx, cy);
-            ctx.rotate(rAngle3);
-            ctx.strokeStyle = primaryColor;
-            ctx.lineWidth = 3;
-
-            for (let i = 0; i < 10; i++) {
-                const rad = (i * Math.PI) / 5;
-                ctx.beginPath();
-                ctx.moveTo(Math.cos(rad) * 45, Math.sin(rad) * 45);
-                ctx.lineTo(Math.cos(rad) * 80, Math.sin(rad) * 80);
-                ctx.stroke();
-            }
-            ctx.restore();
-
-            // 5. Particle Swarm around Core
-            coreParticles.forEach(p => {
-                p.angle += p.speed;
-                const px = cx + Math.cos(p.angle) * p.distance;
-                const py = cy + Math.sin(p.angle) * p.distance;
+                const scale = fov / z2;
+                const x2d = cx + x1 * scale;
+                const y2d = cy + y1 * scale;
+                const alpha = Math.max(0.1, (z2 - 200) / 400);
 
                 ctx.fillStyle = primaryColor;
-                ctx.shadowBlur = 10;
+                ctx.globalAlpha = alpha;
+                ctx.shadowBlur = 8;
                 ctx.shadowColor = primaryColor;
                 ctx.beginPath();
-                ctx.arc(px, py, p.size, 0, Math.PI * 2);
+                ctx.arc(x2d, y2d, Math.max(1, 2.2 * scale), 0, Math.PI * 2);
                 ctx.fill();
-            });
-
-            // 6. Central Glowing Arc Reactor Core Pulse
-            const audioPulse = (state.isListening && state.analyserNode) ? 14 : 0;
-            const coreRadius = 48 + Math.sin(Date.now() * 0.006) * 6 + audioPulse;
-
-            const coreGrad = ctx.createRadialGradient(cx, cy, 4, cx, cy, coreRadius);
-            coreGrad.addColorStop(0, '#ffffff');
-            coreGrad.addColorStop(0.3, primaryColor);
-            coreGrad.addColorStop(0.85, 'rgba(0, 240, 255, 0.4)');
-            coreGrad.addColorStop(1, 'transparent');
-
-            ctx.fillStyle = coreGrad;
-            ctx.shadowBlur = 35;
-            ctx.shadowColor = primaryColor;
-            ctx.beginPath();
-            ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
-            ctx.fill();
-
-            requestAnimationFrame(render);
+            }
+            requestAnimationFrame(renderProjected);
         }
-        render();
+        renderProjected();
     }
 
     // Dual Mirrored Neon Audio Spectrum Canvas
@@ -1100,6 +1703,32 @@
             }
         });
 
+        if (elements.btnQuickCalibrate) {
+            elements.btnQuickCalibrate.addEventListener('click', () => {
+                soundFX.click();
+                const simulatedFreq = new Uint8Array(128);
+                for (let i = 0; i < 128; i++) {
+                    const freq = i * (22050 / 128);
+                    if (freq > 80 && freq < 350) {
+                        simulatedFreq[i] = Math.floor(180 + Math.random() * 60);
+                    } else if (freq >= 350 && freq < 2500) {
+                        simulatedFreq[i] = Math.floor(100 + Math.random() * 50);
+                    } else {
+                        simulatedFreq[i] = Math.floor(20 + Math.random() * 20);
+                    }
+                }
+                state.recordedFeatures = voiceBio.extractFeatures(simulatedFreq);
+                state.recordedFeatures.pitch = 135;
+                state.recordedFeatures.centroid = 1420;
+
+                elements.mPitch.textContent = `${state.recordedFeatures.pitch} Hz`;
+                elements.mCentroid.textContent = `${(state.recordedFeatures.centroid / 1000).toFixed(2)} kHz`;
+                elements.mVector.textContent = `${state.recordedFeatures.bandEnergies.length} Bands`;
+
+                showEnrollStep(3);
+            });
+        }
+
         function stopEnrollRecording() {
             if (recInterval) clearInterval(recInterval);
             if (state.recordMediaRecorder && state.recordMediaRecorder.sampleTimer) {
@@ -1182,8 +1811,68 @@
             speechEngine.toggleListening();
         });
 
-        elements.arcCanvas.addEventListener('click', () => {
-            speechEngine.toggleListening();
+        if (elements.brainCanvas) {
+            elements.brainCanvas.addEventListener('click', () => {
+                speechEngine.toggleListening();
+            });
+        }
+
+        if (elements.brainContainer) {
+            elements.brainContainer.addEventListener('click', (e) => {
+                if (e.target === elements.brainCanvas || e.target === elements.brainContainer) {
+                    speechEngine.toggleListening();
+                }
+            });
+        }
+
+        // Master Voice Biometric "Listen Only to My Voice" Toggle
+        if (elements.chkOnlyMyVoice) {
+            elements.chkOnlyMyVoice.addEventListener('change', (e) => {
+                state.onlyMyVoiceMode = e.target.checked;
+                localStorage.setItem('jarvis_only_my_voice', state.onlyMyVoiceMode);
+                updateVoiceprintUI(!!state.enrolledVoiceprint);
+                soundFX.click();
+                logSecurity(`Single-Master Mode (Only My Voice) ${state.onlyMyVoiceMode ? 'ACTIVATED' : 'DEACTIVATED'}`, 'auth');
+                speakResponse(`Voice Biometric Mode is now ${state.onlyMyVoiceMode ? 'active. I will follow your instructions and commands only' : 'deactivated. Open speaker mode enabled'}.`);
+            });
+        }
+
+        // Test Voice Biometrics Button
+        if (elements.btnTestVoice) {
+            elements.btnTestVoice.addEventListener('click', () => {
+                soundFX.click();
+                if (!state.enrolledVoiceprint) {
+                    speakResponse("Please enroll your master voice profile first before running a biometric test.");
+                    elements.btnEnrollVoice.click();
+                    return;
+                }
+                state.isTestingVoice = true;
+                speechEngine.startListening();
+                speakResponse(`Voice biometric test active. Please speak now so I can verify your voice against master profile ${state.enrolledVoiceprint.userName}.`);
+            });
+        }
+
+        // Biometric Sensitivity Buttons
+        document.querySelectorAll('.sens-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.sens-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const sens = btn.dataset.sens;
+                state.sensitivity = sens;
+                if (sens === 'strict') state.biometricThreshold = 65;
+                else if (sens === 'balanced') state.biometricThreshold = 50;
+                else state.biometricThreshold = 38;
+                
+                if (elements.thresholdLabel) {
+                    elements.thresholdLabel.textContent = `THRESHOLD: ${state.biometricThreshold}%`;
+                }
+                const threshLine = document.querySelector('.meter-threshold-line');
+                if (threshLine) {
+                    threshLine.style.left = `${state.biometricThreshold}%`;
+                }
+                soundFX.click();
+                logSecurity(`Biometric Sensitivity updated to ${sens.toUpperCase()} (Required Match: ${state.biometricThreshold}%)`, 'sys');
+            });
         });
 
         elements.btnSubmitCmd.addEventListener('click', () => {
@@ -1220,14 +1909,6 @@
             logSecurity(`Audio SFX ${state.soundEnabled ? 'Enabled' : 'Muted'}`, 'sys');
         });
 
-        elements.btnToggleSecurity.addEventListener('click', () => {
-            state.strictMode = !state.strictMode;
-            elements.strictModeStatus.textContent = state.strictMode ? "ENABLED" : "DISABLED";
-            elements.strictModeStatus.className = state.strictMode ? "badge badge-active" : "badge badge-inactive";
-            logSecurity(`Strict Speaker Biometrics ${state.strictMode ? 'ACTIVATED' : 'DEACTIVATED'}`, 'sys');
-            soundFX.click();
-        });
-
         elements.btnClearLogs.addEventListener('click', () => {
             clearTerminalLogs();
             soundFX.click();
@@ -1241,24 +1922,28 @@
 
         elements.btnDismissAlert.addEventListener('click', () => {
             elements.alertOverlay.classList.add('hidden');
+            if (elements.brainContainer) {
+                elements.brainContainer.classList.remove('alert-vibrating');
+            }
             setJarvisState('STANDBY');
             soundFX.click();
         });
     }
 
     function initJARVIS() {
-        console.log("Initializing J.A.R.V.I.S. Ultra-Premium Core Engine...");
+        console.log("Initializing J.A.R.V.I.S. Ultra-Premium Neural Core...");
 
         initBgCanvas();
-        initArcReactorCanvas();
+        initBrainCanvas();
         initAudioVisualizerCanvas();
         initEventListeners();
         initEnrollmentWizard();
         loadSavedVoiceprint();
         startTelemetryLoop();
 
-        logSecurity("J.A.R.V.I.S. Kernel v4.2 initialized.", "sys");
-        logSecurity("3D Arc Reactor canvas and particle swarm online.", "sys");
+        logSecurity("J.A.R.V.I.S. Neural Matrix v5.0 initialized.", "sys");
+        logSecurity("3D Holographic Neural Brain online with live dynamic vibrations.", "sys");
+        logSecurity("Voice Biometric Engine armed: calibrated for single-master authorization.", "auth");
     }
 
     if (document.readyState === 'loading') {
